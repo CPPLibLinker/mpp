@@ -52,6 +52,20 @@ Implemented commands:
 - `mpp run [target]`
 - `mpp clean [--vendor]`
 
+Current source layout:
+
+```txt
+src/mpp/
+  cli.py              # command parser and command orchestration
+  core.py             # shared project/config/process helpers
+  recipes.py          # vendor recipe lookup and option/profile selection
+  vendor.py           # dependency fetch/cache/copy logic
+  build/cmake.py      # CMake generation and CMakeLists integration
+  editor/vscode.py    # VS Code config generation
+  editor/clangd.py    # clangd-compatible editor config
+  editor/common.py    # IDE/editor dispatch
+```
+
 Current limitations:
 
 - Python 3.11+ required.
