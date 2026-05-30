@@ -278,12 +278,57 @@ def is_git_url(value: str) -> bool:
     return value.startswith(("http://", "https://", "file://", "git@")) or value.endswith(".git")
 
 
+def print_recipe_options_cmd(args: argparse.Namespace) -> None:
+    pkg, requested_version, recipe_path, recipe = find_recipe_and_version(args.package, args.version)
+    version = requested_version or recipe.get("default_version", "HEAD")
+    print(f"{pkg} {version}")
+    print(f"recipe: {recipe_path}")
+
+    versions = recipe.get("versions", {})
+    if versions:
+        print("\nversions:")
+        for name in sorted(versions.keys()):
+            print(f"  {name}")
+
+    platforms = recipe.get("platforms", {}) or recipe.get("backends", {})
+    if platforms:
+        print("\nplatforms:")
+        for name, meta in platforms.items():
+            desc = meta.get("description", "")
+            options = ", ".join(meta.get("options", []))
+            suffix = f" - {desc}" if desc else ""
+            print(f"  {name}{suffix}")
+            if options:
+                print(f"    options: {options}")
+
+    options = recipe.get("options", {})
+    if options:
+        print("\noptions:")
+        for name, meta in options.items():
+            desc = meta.get("description", "")
+            default = meta.get("default")
+            values = meta.get("values", [])
+            line = f"  {name}"
+            if default is not None:
+                line += f" (default: {default})"
+            if desc:
+                line += f" - {desc}"
+            print(line)
+            if values:
+                print("    values: " + ", ".join(str(v) for v in values))
+
+    if not platforms and not options:
+        print("\nNo custom platform presets or options documented for this recipe.")
+
+
 def add_cmd(args: argparse.Namespace) -> None:
     project = load_project()
     ensure_dirs(project.root)
     deps = project.config.setdefault("dependencies", {})
 
     if is_git_url(args.package):
+        if args.platform or args.backend:
+            raise MppError("--platform requires a named package recipe")
         pkg = args.package.rstrip("/").split("/")[-1].removesuffix(".git")
         git_url = args.package
         version = args.tag or args.branch or "HEAD"
@@ -302,9 +347,25 @@ def add_cmd(args: argparse.Namespace) -> None:
         source = "recipe"
         recipe_commit = git_head(recipe_path.parents[2], "local-uncommitted")
 
+    user_options = (args.option or []) + (args.define or [])
+    recipe_options = recipe.get("options", {})
+    for opt in user_options:
+        if "=" not in opt:
+            raise MppError(f"option must be KEY=VALUE: {opt}")
+        key, value = opt.split("=", 1)
+        if key in recipe_options:
+            values = [str(v) for v in recipe_options[key].get("values", [])]
+            if values and value not in values:
+                raise MppError(f"invalid value for {key}: {value}; valid: {', '.join(values)}")
+
     export_paths = recipe.get("export", {}).get("paths")
     commit = export_dependency(project.root, pkg, git_url, checkout_ref, checkout_branch, export_paths)
     deps[pkg] = {"version": version, "source": source}
+    selected_platform = args.platform or args.backend
+    if selected_platform:
+        deps[pkg]["platform"] = selected_platform
+    if user_options:
+        deps[pkg]["options"] = user_options
     if source == "git":
         deps[pkg]["git"] = git_url
     write_project_toml(project.config_path, project.config)
@@ -314,9 +375,13 @@ def add_cmd(args: argparse.Namespace) -> None:
     profile = detect_profile(build_type)
     lock_data = load_toml(project.lock_path).get("package", {})
     profile_meta = select_recipe_profile(recipe, profile)
+    platform_meta = select_recipe_platform(recipe, selected_platform)
     cmake_meta = recipe.get("cmake", {})
-    cmake_target = cmake_meta.get("target") or recipe.get("target") or pkg
-    cmake_source_dir = cmake_meta.get("source_dir", ".")
+    cmake_target = platform_meta.get("target") or cmake_meta.get("target") or recipe.get("target") or pkg
+    cmake_source_dir = platform_meta.get("source_dir") or cmake_meta.get("source_dir", ".")
+    cmake_options = cmake_meta.get("options", []) + platform_meta.get("options", []) + user_options
+    include_dirs = profile_meta.get("include_dirs", ["include", "src"]) + platform_meta.get("include_dirs", [])
+    system_libs = profile_meta.get("libs", []) + platform_meta.get("libs", [])
     lock_data[pkg] = {
         "version": version,
         "git": git_url,
@@ -326,8 +391,10 @@ def add_cmd(args: argparse.Namespace) -> None:
         "profile": profile,
         "cmake_target": cmake_target,
         "cmake_source_dir": cmake_source_dir,
-        "include_dirs": profile_meta.get("include_dirs", ["include", "src"]),
-        "system_libs": profile_meta.get("libs", []),
+        "cmake_options": cmake_options,
+        "platform": selected_platform or "default",
+        "include_dirs": list(dict.fromkeys(include_dirs)),
+        "system_libs": list(dict.fromkeys(system_libs)),
     }
     write_lock_toml(project.lock_path, lock_data)
     updated_project = Project(project.root, project.config_path, project.lock_path, load_toml(project.config_path))
@@ -375,6 +442,19 @@ def select_recipe_profile(recipe: dict[str, Any], full_profile: str) -> dict[str
         return profiles[full_profile]
     base = "-".join(full_profile.split("-")[:3])
     return profiles.get(base, {})
+
+
+def select_recipe_platform(recipe: dict[str, Any], selected_platform: str | None) -> dict[str, Any]:
+    if not selected_platform:
+        return {}
+    platforms = recipe.get("platforms", {})
+    # Backward compatible for old local recipes, but new recipes should use [platforms.*].
+    if not platforms:
+        platforms = recipe.get("backends", {})
+    if selected_platform not in platforms:
+        available = ", ".join(sorted(platforms.keys())) or "none"
+        raise MppError(f"platform '{selected_platform}' not available for {recipe.get('name', 'package')}; available: {available}")
+    return platforms[selected_platform]
 
 
 def source_cache_dir(name: str, git_url: str, ref: str) -> Path:
@@ -540,10 +620,15 @@ def generate_cmake(project: Project) -> None:
         cmake_target = info.get("cmake_target", name)
         cmake_source_dir = info.get("cmake_source_dir", ".")
         cmake_src = src if cmake_source_dir in ("", ".") else f"{src}/{cmake_source_dir}"
+        cmake_options = info.get("cmake_options", [])
         system_libs = info.get("system_libs", [])
         lines += [f"  {keyword}(package STREQUAL \"{name}\")"]
         lines += [f"    if(EXISTS \"{cmake_src}/CMakeLists.txt\")"]
         lines += [f"      if(NOT TARGET {cmake_target})"]
+        for option in cmake_options:
+            if isinstance(option, str) and "=" in option:
+                opt_name, opt_value = option.split("=", 1)
+                lines += [f"        set({opt_name} {opt_value} CACHE STRING \"mpp option for {name}\" FORCE)"]
         lines += [f"        add_subdirectory(\"{cmake_src}\" \"${{CMAKE_BINARY_DIR}}/mpp/{name}\")"]
         lines += ["      endif()"]
         lines += [f"      if(TARGET {cmake_target})"]
@@ -636,7 +721,16 @@ def make_parser() -> argparse.ArgumentParser:
     a.add_argument("--version")
     a.add_argument("--tag")
     a.add_argument("--branch")
+    a.add_argument("--platform", help="select package platform preset, e.g. raylib --platform sdl")
+    a.add_argument("--backend", help=argparse.SUPPRESS)  # deprecated alias for --platform
+    a.add_argument("--option", action="append", metavar="KEY=VALUE", help="pass package CMake option; repeatable")
+    a.add_argument("-D", "--define", action="append", metavar="KEY=VALUE", help="alias for --option; repeatable")
     a.set_defaults(func=add_cmd)
+
+    o = sub.add_parser("options", help="show package versions, platforms, and options")
+    o.add_argument("package")
+    o.add_argument("--version")
+    o.set_defaults(func=print_recipe_options_cmd)
 
     b = sub.add_parser("build", help="configure and build with CMake")
     b.add_argument("--type")

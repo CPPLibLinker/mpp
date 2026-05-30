@@ -44,7 +44,9 @@ Implemented commands:
 
 - `mpp init [--ide vscode|none]`
 - `mpp add <package>`
+- `mpp add <package> --platform <platform>`
 - `mpp add <git-repo>`
+- `mpp options <package>`
 - `mpp sync`
 - `mpp build`
 - `mpp run [target]`
@@ -194,9 +196,31 @@ Adds a dependency using a known recipe from `github.com/CPPLibLinker/vendor`.
 Examples:
 
 ```sh
-mpp add raylib        # default recipe version
-mpp add raylib-6.0    # explicit version/tag from recipe
-mpp add raylib-master # explicit branch from recipe
+mpp add raylib                    # default recipe version
+mpp add raylib-6.0                # explicit version/tag from recipe
+mpp add raylib-master             # explicit branch from recipe
+mpp add raylib-master --platform sdl
+mpp add raylib --option USE_AUDIO=OFF
+mpp add raylib -D PLATFORM=SDL -D BUILD_SHARED_LIBS=OFF
+```
+
+Use `--platform` for named recipe platform presets and `--option`/`-D` for package CMake options. These are stored in `mpp.toml` and `mpp.lock` and emitted before `add_subdirectory()`.
+
+Inspect supported customization for a package:
+
+```sh
+mpp options raylib
+mpp options glfw
+```
+
+Recipes may expose platform presets. For example raylib currently supports:
+
+```sh
+mpp add raylib --platform desktop
+mpp add raylib --platform sdl
+mpp add raylib --platform rgfw
+mpp add raylib --platform wayland
+mpp add raylib --platform x11
 ```
 
 Expected behavior:
