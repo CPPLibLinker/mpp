@@ -216,15 +216,24 @@ mpp add raylib-master             # explicit branch from recipe
 mpp add raylib-master --platform sdl
 mpp add raylib --option USE_AUDIO=OFF
 mpp add raylib -D PLATFORM=SDL -D BUILD_SHARED_LIBS=OFF
+mpp init raylib --example
+mpp init raylib --example shapes
 ```
 
 Use `--platform` for named recipe platform presets and `--option`/`-D` for package CMake options. These are stored in `mpp.toml` and `mpp.lock` and emitted before `add_subdirectory()`.
 
-Inspect supported customization for a package:
+Inspect supported customization and examples for a package:
 
 ```sh
 mpp options raylib
 mpp options glfw
+```
+
+Initialize a project with a package and recipe-provided example:
+
+```sh
+mpp init raylib --example
+mpp init raylib --example shapes --platform sdl
 ```
 
 Recipes may expose platform presets. For example raylib currently supports:

@@ -4,6 +4,32 @@
 
 It is not a native compiled binary yet. It runs anywhere the required Python/runtime tools are available.
 
+## Install policy
+
+`mpp` should be available as a global user command:
+
+```sh
+mpp --version
+```
+
+Do **not** install into system Python.
+
+Use one of these methods:
+
+1. Source symlink install: recommended while developing from this repo.
+2. `pipx`: recommended later for packaged/global installs.
+3. Virtual environment: useful for isolated development/testing.
+
+Avoid:
+
+```sh
+python3 -m pip install -e .
+```
+
+unless a virtual environment is active.
+
+Do not use `--break-system-packages` unless you intentionally want to modify your OS-managed Python environment.
+
 ## Requirements
 
 Required:
@@ -18,7 +44,7 @@ Recommended:
 - Ninja or Make
 - VS Code, clangd, CLion, Visual Studio, or another C++ editor
 
-## Run from source
+## Recommended global source install
 
 Clone the repo:
 
@@ -27,11 +53,50 @@ git clone https://github.com/CPPLibLinker/mpp.git
 cd mpp
 ```
 
-Run with the local wrapper:
+Install the global user command:
 
 ```sh
-./bin/mpp --version
-./bin/mpp init --ide vscode
+./install.sh
+```
+
+This creates a symlink:
+
+```txt
+~/.local/bin/mpp -> /path/to/mpp/bin/mpp
+```
+
+Then run from anywhere:
+
+```sh
+mpp --version
+mpp init raylib --example
+mpp build
+mpp run
+```
+
+Make sure `~/.local/bin` is in `PATH`:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Add that line to your shell profile if needed:
+
+```sh
+# bash
+~/.bashrc
+
+# zsh
+~/.zshrc
+```
+
+## Run from source without global install
+
+You can always run the local wrapper directly:
+
+```sh
+/path/to/mpp/bin/mpp --version
+/path/to/mpp/bin/mpp init --ide vscode
 ```
 
 The wrapper runs:
@@ -40,23 +105,54 @@ The wrapper runs:
 PYTHONPATH=src python3 -m mpp "$@"
 ```
 
-## Editable install
+## Install with pipx
 
-For development, install in editable mode:
+For a global CLI install without touching system Python:
+
+```sh
+pipx install -e /path/to/mpp
+```
+
+If already installed:
+
+```sh
+pipx reinstall -e /path/to/mpp
+```
+
+If publishing to PyPI later, users should be able to install with:
+
+```sh
+pipx install cppliblinker-mpp
+```
+
+## Virtual environment install
+
+Use this when you specifically want an isolated Python dev environment:
 
 ```sh
 cd mpp
+python3 -m venv .venv
+source .venv/bin/activate
 python3 -m pip install -e .
 ```
 
-Then run:
+Then run while the venv is active:
 
 ```sh
 mpp --version
-mpp init
-mpp add raylib
-mpp build
-mpp run
+```
+
+After opening a new shell, activate again:
+
+```sh
+cd mpp
+source .venv/bin/activate
+```
+
+Or run without activation:
+
+```sh
+./.venv/bin/mpp --version
 ```
 
 ## How the command works
@@ -68,16 +164,22 @@ mpp run
 mpp = "mpp.cli:main"
 ```
 
-When installed with `pip`, Python creates an executable command named:
+When installed inside a venv or by `pipx`, Python creates an executable command named:
 
 ```txt
 mpp
 ```
 
-That command imports and runs:
+For the source symlink install, `~/.local/bin/mpp` points to:
 
-```py
-mpp.cli:main
+```txt
+/path/to/mpp/bin/mpp
+```
+
+That wrapper runs:
+
+```sh
+PYTHONPATH=/path/to/mpp/src python3 -m mpp "$@"
 ```
 
 ## Does mpp run anywhere Python runs?
@@ -148,6 +250,8 @@ The project-local vendor copy should not contain any `.git` directory.
 
 ## Typical project setup
 
+After global install:
+
 ```sh
 mkdir game
 cd game
@@ -157,44 +261,96 @@ mpp build
 mpp run
 ```
 
-## Install with pipx
-
-If publishing to PyPI later, users should be able to install with:
+Or initialize with an example:
 
 ```sh
-pipx install cppliblinker-mpp
-```
-
-For now, local install is:
-
-```sh
-python3 -m pip install -e /path/to/mpp
+mkdir game
+cd game
+mpp init raylib --example
+mpp run
 ```
 
 ## Uninstall
 
-If installed with pip:
+If installed with `install.sh`:
+
+```sh
+rm -f ~/.local/bin/mpp
+```
+
+If installed inside a venv, remove the venv:
+
+```sh
+rm -rf .venv
+```
+
+If installed with pip inside an active venv:
 
 ```sh
 python3 -m pip uninstall cppliblinker-mpp
+```
+
+If installed with pipx:
+
+```sh
+pipx uninstall cppliblinker-mpp
 ```
 
 ## Troubleshooting
 
 ### `mpp: command not found`
 
-Use the local wrapper:
+Check whether `~/.local/bin` is in `PATH`:
+
+```sh
+echo "$PATH"
+```
+
+Temporarily add it:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then retry:
+
+```sh
+mpp --version
+```
+
+Or run the wrapper directly:
 
 ```sh
 /path/to/mpp/bin/mpp --version
 ```
 
-or install it:
+### `externally-managed-environment`
+
+Your OS prevents installing packages into system Python.
+
+Use the source symlink install:
 
 ```sh
 cd /path/to/mpp
+./install.sh
+```
+
+or use a virtual environment:
+
+```sh
+cd /path/to/mpp
+python3 -m venv .venv
+source .venv/bin/activate
 python3 -m pip install -e .
 ```
+
+or use pipx:
+
+```sh
+pipx install -e /path/to/mpp
+```
+
+Avoid `--break-system-packages`.
 
 ### `mpp requires Python 3.11+`
 
