@@ -42,6 +42,23 @@ def safe_project_name(name: str) -> str:
     return safe.strip("_") or "app"
 
 
+def package_base_name(package: str | None) -> str | None:
+    if not package or is_git_url(package):
+        return None
+    try:
+        pkg, _, _, _ = find_recipe_and_version(package, None)
+        return pkg
+    except MppError:
+        return package.rsplit("-", 1)[0]
+
+
+def default_target_name(project_name: str, package: str | None) -> str:
+    pkg = package_base_name(package)
+    if pkg and project_name == safe_project_name(pkg):
+        return f"{project_name}_app"
+    return project_name
+
+
 def init_cmd(args: argparse.Namespace) -> None:
     if args.vendor:
         if args.package and args.package != args.vendor:
@@ -58,9 +75,10 @@ def init_cmd(args: argparse.Namespace) -> None:
     config_path = root / "mpp.toml"
     if not config_path.exists():
         name = safe_project_name(args.name or root.name)
+        target_name = default_target_name(name, args.package)
         write_project_toml(config_path, {
             "project": {"name": name, "version": "0.1.0", "cpp_standard": 20},
-            "build": {"generator": "cmake", "build_dir": "build", "default_target": name, "build_type": "Debug", "export_compile_commands": True},
+            "build": {"generator": "cmake", "build_dir": "build", "default_target": target_name, "build_type": "Debug", "export_compile_commands": True},
             "ide": {"name": ide},
             "dependencies": {},
         })
@@ -70,6 +88,7 @@ def init_cmd(args: argparse.Namespace) -> None:
     cmake = root / "CMakeLists.txt"
     if args.cmake and not cmake.exists():
         name = safe_project_name(args.name or root.name)
+        target_name = default_target_name(name, args.package)
         cmake.write_text(f"""cmake_minimum_required(VERSION 3.20)
 project({name} LANGUAGES CXX)
 
@@ -79,8 +98,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(mpp/generated/mpp.cmake)
 
-add_executable({name} src/main.cpp)
-# mpp_link({name} package_name)
+add_executable({target_name} src/main.cpp)
+# mpp_link({target_name} package_name)
 """)
         (root / "src").mkdir(exist_ok=True)
         main = root / "src" / "main.cpp"
