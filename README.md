@@ -1,749 +1,284 @@
-# mpp — C++ Module/Package Linker
+# mpp
 
-`mpp` is a lightweight dependency/linking helper for C++ projects.
+A small C++ dependency linker that vendors libraries into your project and generates CMake glue.
 
-The first goal is intentionally narrow:
+```sh
+mpp init --name game --vendor raylib --example --ide vscode
+cd game
+mpp run
+```
 
-- C++ projects only
-- CMake generation only
-- Git-based dependency recipes
-- Local vendoring first
-- Simple commands: `add`, `build`, `run`, `clean`
+`mpp` is intentionally simple:
 
-`mpp` is **not** initially a full replacement for CMake, Conan, vcpkg, or Make. It is a small tool that makes adding and linking common C++ libraries easier by using curated vendor recipes.
+- C++ focused
+- CMake focused
+- Git recipe based
+- local vendoring into `mpp/vendor/<package>`
+- generated integration in `mpp/generated/mpp.cmake`
+
+It is not trying to replace Conan/vcpkg/CMake. It is a fast path for adding common C++ libraries with sane recipes.
 
 ---
 
-## Current Implementation
+## Key map
 
-This repository now contains the first Python-based CLI implementation.
+| Go to | Section |
+|---|---|
+| Install | [Install](#install) |
+| Create project | [Quick start](#quick-start) |
+| Add dependencies | [Add packages](#add-packages) |
+| Examples | [Recipe examples](#recipe-examples) |
+| Build/run/clean | [Build commands](#build-commands) |
+| IDE support | [Editor support](#editor-support) |
+| Project files | [Generated layout](#generated-layout) |
+| Dev architecture | [Source layout](#source-layout) |
+| Recipe repo | [Vendor recipes](#vendor-recipes) |
 
-Run from source inside the `mpp` repository:
+---
+
+## Install
+
+For local source installs, use the global user symlink:
 
 ```sh
-PYTHONPATH=src python3 -m mpp --version
-PYTHONPATH=src python3 -m mpp init --name demo --ide vscode
-PYTHONPATH=src python3 -m mpp build
-PYTHONPATH=src python3 -m mpp run
-```
-
-Or use the local wrapper:
-
-```sh
-./bin/mpp --version
-```
-
-Install locally in editable mode:
-
-```sh
-python3 -m pip install -e .
+git clone https://github.com/CPPLibLinker/mpp.git
+cd mpp
+./install.sh
 mpp --version
 ```
 
-Implemented commands:
-
-- `mpp init [--ide vscode|none]`
-- `mpp add <package>`
-- `mpp add <package> --platform <platform>`
-- `mpp add <git-repo>`
-- `mpp options <package>`
-- `mpp sync`
-- `mpp build`
-- `mpp run [target]`
-- `mpp clean [--vendor]`
-
-Current source layout:
+This creates:
 
 ```txt
-src/mpp/
-  cli.py              # command parser and command orchestration
-  core.py             # shared project/config/process helpers
-  recipes.py          # vendor recipe lookup and option/profile selection
-  vendor.py           # dependency fetch/cache/copy logic
-  build/cmake.py      # CMake generation and CMakeLists integration
-  editor/vscode.py    # VS Code config generation
-  editor/clangd.py    # clangd-compatible editor config
-  editor/common.py    # IDE/editor dispatch
+~/.local/bin/mpp -> /path/to/mpp/bin/mpp
 ```
 
-Current limitations:
-
-- Python 3.11+ required.
-- CMake only.
-- Recipe lookup uses the sibling `../vendor` repo during local development.
-- If no sibling `../vendor` repo exists, recipe lookup clones `https://github.com/CPPLibLinker/vendor.git` into `~/.cache/mpp/vendor`.
-- You can override recipe lookup with `MPP_VENDOR_REPO=/path/to/vendor`.
-- Raw Git dependencies are only safely usable if they expose a normal CMake target.
-- Recipe metadata support is intentionally minimal: `git`, `default_version`, `[cmake].target`, and `[profiles.<profile>].libs`.
-
----
-
-## Repository Architecture
-
-The project is split into two repositories under the `CPPLibLinker` GitHub organization.
-
-```txt
-github.com/CPPLibLinker/mpp
-```
-
-Main source repository for the `mpp` command-line tool.
-
-```txt
-github.com/CPPLibLinker/vendor
-```
-
-Recipe repository containing known build/link instructions for supported third-party libraries.
-
-Important naming distinction:
-
-```txt
-CPPLibLinker/mpp     = source code for the module/package linker
-CPPLibLinker/vendor  = Git repository of dependency recipes
-```
-
----
-
-## Local Project Layout
-
-A user project using `mpp` may look like this:
-
-```txt
-my-cpp-app/
-  src/
-    main.cpp
-
-  mpp.toml
-  mpp.lock
-
-  CMakeLists.txt
-
-  mpp/
-    generated/
-      mpp.cmake
-
-    vendor/
-      raylib/
-        .mpp/
-          REVISION
-        CMakeLists.txt
-        src/
-        examples/
-        ...
-```
-
-### Files
-
-#### `mpp.toml`
-
-Project dependency and target configuration.
-
-#### `mpp.lock`
-
-Resolved dependency versions, Git commits, build profile, and selected recipe revisions.
-
-#### `mpp/generated/mpp.cmake`
-
-Generated CMake integration file. This file is produced by `mpp` and should not be manually edited.
-
-#### `mpp/vendor/`
-
-Local vendored dependency sources and/or built artifacts for the project.
-
-This is different from `github.com/CPPLibLinker/vendor`, which is the central recipe repository.
-
----
-
-## Command Goals
-
-### `mpp init`
-
-Initializes a C++ project for use with `mpp`.
-
-It asks which IDE/editor config to generate. Currently supported:
-
-- `vscode`
-- `none`
-
-You can skip the prompt:
+Make sure this is in your shell path:
 
 ```sh
-mpp init --ide vscode
-mpp init --ide none
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-VS Code generation creates:
+More install details: [INSTALL.md](INSTALL.md)
 
-```txt
-.vscode/c_cpp_properties.json
-.vscode/settings.json
-```
+---
 
-and enables CMake compile commands:
+## Quick start
 
-```txt
-build/compile_commands.json
-```
-
-Creates:
-
-```txt
-mpp.toml
-mpp.lock
-mpp/generated/
-mpp/vendor/
-```
-
-Optionally creates a minimal `CMakeLists.txt` if one does not exist.
-
-Example:
+Create a project with a vendored library and starter example:
 
 ```sh
-mpp init
+mpp init --name game --vendor raylib --example --ide vscode
+cd game
+mpp run
+```
+
+Create in the current directory instead:
+
+```sh
+mpp init --here --name game --vendor raylib --example
+```
+
+Create a blank project:
+
+```sh
+mpp init --name game --ide vscode
+cd game
+mpp add raylib
+mpp run
 ```
 
 ---
 
-### `mpp add <package>`
-
-Adds a dependency using a known recipe from `github.com/CPPLibLinker/vendor`.
-
-Examples:
+## Add packages
 
 ```sh
-mpp add raylib                    # default recipe version
-mpp add raylib-6.0                # explicit version/tag from recipe
-mpp add raylib-master             # explicit branch from recipe
-mpp add raylib-master --platform sdl
-mpp add raylib --option USE_AUDIO=OFF
-mpp add raylib -D PLATFORM=SDL -D BUILD_SHARED_LIBS=OFF
-mpp init raylib --example
-mpp init raylib --example shapes
+mpp add raylib
+mpp add raylib-6.0
+mpp add raylib-master
+mpp add fmt
+mpp add sokol
 ```
 
-Use `--platform` for named recipe platform presets and `--option`/`-D` for package CMake options. These are stored in `mpp.toml` and `mpp.lock` and emitted before `add_subdirectory()`.
+Use recipe platform presets:
 
-Inspect supported customization and examples for a package:
+```sh
+mpp add raylib --platform sdl
+mpp add raylib --platform wayland
+```
+
+Pass CMake options:
+
+```sh
+mpp add raylib -D USE_AUDIO=OFF
+mpp add fmt -D FMT_HEADER_ONLY=ON
+```
+
+Inspect package options:
 
 ```sh
 mpp options raylib
-mpp options glfw
-```
-
-Initialize a project with a package and recipe-provided example:
-
-```sh
-mpp init raylib --example
-mpp init raylib --example shapes --platform sdl
-```
-
-Recipes may expose platform presets. For example raylib currently supports:
-
-```sh
-mpp add raylib --platform desktop
-mpp add raylib --platform sdl
-mpp add raylib --platform rgfw
-mpp add raylib --platform wayland
-mpp add raylib --platform x11
-```
-
-Expected behavior:
-
-1. Find `raylib` in the vendor recipe repository.
-2. Resolve version and platform profile.
-3. Clone/download the dependency into local `mpp/vendor/raylib`.
-4. Update `mpp.toml`.
-5. Update `mpp.lock`.
-6. Regenerate `mpp/generated/mpp.cmake`.
-
----
-
-### `mpp add <git-repo>`
-
-Adds a raw Git dependency.
-
-Example:
-
-```sh
-mpp add https://github.com/raysan5/raylib
-```
-
-For raw Git repos, `mpp` can either:
-
-- infer a basic CMake project, or
-- require the user to provide metadata manually.
-
-Initial support should be conservative. If no known recipe exists, `mpp` should not pretend to know how to link the dependency safely.
-
----
-
-### `mpp build`
-
-Configures and builds the CMake project.
-
-Example:
-
-```sh
-mpp build
-```
-
-Expected behavior:
-
-```sh
-cmake -S . -B build
-cmake --build build
-```
-
-`mpp build` should also ensure generated files are up to date before invoking CMake.
-
----
-
-### `mpp run`
-
-Builds and runs the configured executable target.
-
-Example:
-
-```sh
-mpp run
-```
-
-Expected behavior:
-
-1. Run `mpp build`.
-2. Locate the configured executable target.
-3. Execute it.
-
-If multiple executable targets exist, the user should specify one:
-
-```sh
-mpp run app
+mpp options sokol
 ```
 
 ---
 
-### `mpp clean`
+## Recipe examples
 
-Removes generated build output.
-
-Example:
+Recipes can provide starter `src/main.cpp` files.
 
 ```sh
-mpp clean
+mpp init --name ray --vendor raylib --example
+mpp init --name ray --vendor raylib --example shapes
+mpp init --name sokol-demo --vendor sokol --example window
+mpp init --name test-fmt --vendor fmt --example
 ```
 
-Expected behavior:
+Available examples are listed by:
+
+```sh
+mpp options <package>
+```
+
+---
+
+## Build commands
+
+```sh
+mpp build          # configure and build with CMake
+mpp run            # build, then run default target
+mpp run <target>   # run a specific target
+mpp sync           # regenerate mpp/generated/mpp.cmake and editor files
+mpp clean          # remove build output and generated files
+mpp clean --vendor # also remove vendored packages
+```
+
+---
+
+## Editor support
+
+During `init`, choose an editor preset:
+
+```sh
+mpp init --ide vscode
+mpp init --ide clangd
+mpp init --ide clion
+mpp init --ide visualstudio
+mpp init --ide all
+mpp init --ide none
+```
+
+Generated files may include:
 
 ```txt
-remove build/
-remove mpp/generated/
+.vscode/settings.json
+.vscode/c_cpp_properties.json
+<project>.code-workspace
+.clangd
+compile_flags.txt
+CMakePresets.json
 ```
 
-It should not delete `mpp/vendor/` by default.
-
-Optional future command:
-
-```sh
-mpp clean --vendor
-```
-
-would remove vendored dependencies too.
-
----
-
-## Example User Workflow
-
-```sh
-mkdir game
-cd game
-
-mpp init
-mpp add raylib
-mpp build
-mpp run
-```
-
-User `CMakeLists.txt`:
-
-```cmake
-cmake_minimum_required(VERSION 3.20)
-project(game LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-include(mpp/generated/mpp.cmake)
-
-add_executable(game src/main.cpp)
-mpp_link(game raylib)
-```
-
-Generated `mpp/generated/mpp.cmake` may contain:
-
-```cmake
-function(mpp_link target package)
-  if(package STREQUAL "raylib")
-    target_include_directories(${target} PRIVATE
-      "${CMAKE_SOURCE_DIR}/mpp/vendor/raylib/include"
-    )
-
-    target_link_libraries(${target} PRIVATE
-      "${CMAKE_SOURCE_DIR}/mpp/vendor/raylib/lib/x86_64-linux-gcc/libraylib.a"
-      m pthread dl rt X11
-    )
-  else()
-    message(FATAL_ERROR "Unknown mpp package: ${package}")
-  endif()
-endfunction()
-```
-
----
-
-## `mpp.toml` Design
-
-Example:
-
-```toml
-[project]
-name = "game"
-version = "0.1.0"
-cpp_standard = 20
-
-[build]
-generator = "cmake"
-build_dir = "build"
-default_target = "game"
-build_type = "Debug"
-
-[dependencies.raylib]
-version = "5.5"
-source = "recipe"
-```
-
-A raw Git dependency could look like:
-
-```toml
-[dependencies.raylib]
-git = "https://github.com/raysan5/raylib"
-tag = "5.5"
-source = "git"
-```
-
----
-
-## `mpp.lock` Design
-
-Example:
-
-```toml
-[package.raylib]
-version = "5.5"
-git = "https://github.com/raysan5/raylib"
-commit = "abc123..."
-recipe_repo = "https://github.com/CPPLibLinker/vendor"
-recipe_commit = "def456..."
-profile = "x86_64-linux-gcc-debug-static"
-```
-
-The lockfile should make builds reproducible.
-
----
-
-## Vendor Recipe Repository Layout
-
-Repository:
+Aliases:
 
 ```txt
-github.com/CPPLibLinker/vendor
+nvim, neovim, vim, zed, sublime, kate -> clangd
 ```
 
-Suggested structure:
+---
+
+## Generated layout
+
+A project using `mpp` looks like:
 
 ```txt
-vendor/
-  packages/
-    raylib/
-      recipe.toml
-      patches/
-        fix-linux.patch
-
-    glfw/
-      recipe.toml
-
-    fmt/
-      recipe.toml
+game/
+  CMakeLists.txt
+  mpp.toml
+  mpp.lock
+  src/main.cpp
+  mpp/
+    generated/mpp.cmake
+    vendor/
+      raylib/
+        CMakeLists.txt
+        src/
+        ...
 ```
 
-Example recipe:
+Important files:
 
-```toml
-name = "raylib"
-description = "Simple and easy-to-use library to enjoy videogames programming"
-homepage = "https://www.raylib.com"
-git = "https://github.com/raysan5/raylib"
-default_version = "5.5"
-
-[versions."5.5"]
-tag = "5.5"
-
-[build]
-system = "cmake"
-
-[cmake]
-options = [
-  "BUILD_EXAMPLES=OFF",
-  "BUILD_GAMES=OFF"
-]
-
-[profiles.x86_64-linux-gcc]
-linkage = "static"
-include_dirs = ["include"]
-libs = ["raylib", "m", "pthread", "dl", "rt", "X11"]
-artifact = "lib/libraylib.a"
-
-[profiles.x86_64-windows-msvc]
-linkage = "static"
-include_dirs = ["include"]
-libs = ["raylib", "winmm", "gdi32", "opengl32"]
-artifact = "lib/raylib.lib"
-
-[profiles.x86_64-windows-mingw]
-linkage = "static"
-include_dirs = ["include"]
-libs = ["raylib", "winmm", "gdi32", "opengl32"]
-artifact = "lib/libraylib.a"
-```
+| File | Purpose |
+|---|---|
+| `mpp.toml` | project dependencies/settings |
+| `mpp.lock` | resolved commits, profile, recipe revision |
+| `mpp/generated/mpp.cmake` | generated CMake integration |
+| `mpp/vendor/<package>` | plain copied dependency source, no `.git` |
 
 ---
 
-## Platform Profiles
+## Vendor recipes
 
-`mpp` should identify dependencies by a build profile.
-
-Recommended profile format:
+Recipes live in the separate repo:
 
 ```txt
-<arch>-<os>-<compiler>-<build_type>-<linkage>
+https://github.com/CPPLibLinker/vendor
 ```
 
-Examples:
+Local dev layout:
 
 ```txt
-x86_64-linux-gcc-debug-static
-x86_64-linux-clang-release-static
-x86_64-windows-msvc-debug-static
-x86_64-windows-mingw-release-static
+workspace/
+  mpp/
+  vendor/
 ```
 
-Initial supported profiles should be minimal:
+Recipe lookup order:
+
+1. `MPP_VENDOR_REPO=/path/to/vendor`
+2. sibling `../vendor`
+3. cached clone at `~/.cache/mpp/vendor`
+
+Dependency source cache:
 
 ```txt
-x86_64-linux-gcc-debug-static
-x86_64-linux-gcc-release-static
+~/.cache/mpp/sources/
 ```
 
-Then expand later.
+Project vendor copies never include `.git` directories.
 
 ---
 
-## CMake Generation Strategy
-
-For the first version, `mpp` should only auto-populate one file:
+## Source layout
 
 ```txt
-mpp/generated/mpp.cmake
-```
-
-The user includes it manually:
-
-```cmake
-include(mpp/generated/mpp.cmake)
-```
-
-Then links packages with:
-
-```cmake
-mpp_link(my_target raylib)
-```
-
-This avoids rewriting the user’s full `CMakeLists.txt` and keeps `mpp` safer.
-
-Future versions may support automatic CMake file editing, but it should not be required for the MVP.
-
----
-
-## MVP Scope
-
-Version 0.1 should support:
-
-- C++ only
-- CMake only
-- Linux x86_64 GCC first
-- local `mpp/vendor/` directory
-- recipe lookup from `github.com/CPPLibLinker/vendor`
-- static linking
-- commands:
-  - `mpp init`
-  - `mpp add <package>`
-  - `mpp build`
-  - `mpp run [target]`
-  - `mpp clean`
-- generated `mpp/generated/mpp.cmake`
-- `mpp.toml`
-- `mpp.lock`
-
-Out of scope for MVP:
-
-- Makefile generation
-- Ninja generation directly
-- Zig integration
-- C projects
-- global binary cache
-- package publishing
-- dynamic/shared linking
-- cross-compilation
-- complex transitive dependency resolution
-
----
-
-## Implementation Plan
-
-### Phase 1 — Project Core
-
-- Create CLI executable `mpp`.
-- Implement argument parsing.
-- Implement config loading/writing for `mpp.toml`.
-- Implement lockfile loading/writing for `mpp.lock`.
-- Implement platform profile detection.
-
-Commands:
-
-```sh
-mpp init
-mpp clean
+src/mpp/
+  cli.py              # CLI parser and command orchestration
+  core.py             # shared config/project/process helpers
+  recipes.py          # recipe lookup/version/profile/platform logic
+  vendor.py           # fetch/cache/copy dependency source
+  build/cmake.py      # CMake generation and CMakeLists integration
+  editor/common.py    # editor dispatch
+  editor/vscode.py    # VS Code config
+  editor/clangd.py    # clangd-compatible config
 ```
 
 ---
 
-### Phase 2 — Recipe Support
+## Current scope
 
-- Clone or update recipe repository from `github.com/CPPLibLinker/vendor`.
-- Search `packages/<name>/recipe.toml`.
-- Parse recipe metadata.
-- Select matching profile.
+Supported now:
 
-Command:
+- C++ projects
+- CMake builds
+- local vendoring
+- recipe options/platform presets
+- recipe examples
+- Linux x86_64 GCC tested on current machine
 
-```sh
-mpp add raylib
-```
+Planned/possible later:
 
-At this phase, `add` can update config and lockfile without fully building dependency artifacts yet.
-
----
-
-### Phase 3 — Vendoring Dependencies
-
-- Copy dependency source into local project `mpp/vendor/<package>/` without any `.git` directory.
-- Checkout locked tag/commit.
-- Configure dependency with CMake.
-- Build dependency artifact.
-- Copy/export include and lib files into predictable local paths.
-
-Output example:
-
-```txt
-mpp/vendor/raylib/include/
-mpp/vendor/raylib/lib/x86_64-linux-gcc-debug-static/libraylib.a
-```
-
----
-
-### Phase 4 — CMake Generation
-
-Generate:
-
-```txt
-mpp/generated/mpp.cmake
-```
-
-For each dependency, emit an imported target or helper link function.
-
-Preferred CMake style:
-
-```cmake
-add_library(mpp::raylib STATIC IMPORTED)
-
-set_target_properties(mpp::raylib PROPERTIES
-  IMPORTED_LOCATION ".../libraylib.a"
-  INTERFACE_INCLUDE_DIRECTORIES ".../include"
-)
-
-target_link_libraries(mpp::raylib INTERFACE m pthread dl rt X11)
-
-function(mpp_link target package)
-  if(package STREQUAL "raylib")
-    target_link_libraries(${target} PRIVATE mpp::raylib)
-  else()
-    message(FATAL_ERROR "Unknown mpp package: ${package}")
-  endif()
-endfunction()
-```
-
----
-
-### Phase 5 — Build and Run
-
-Implement:
-
-```sh
-mpp build
-mpp run [target]
-```
-
-`mpp build`:
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=<type>
-cmake --build build
-```
-
-`mpp run`:
-
-- call `mpp build`
-- find configured target executable
-- run it
-
----
-
-## Long-Term Direction
-
-After the C++/CMake MVP is stable, possible expansions include:
-
-- Windows MSVC support
-- Windows MinGW support
-- Clang support
-- macOS support
-- shared linking
-- debug/release artifact separation
-- global cache
-- transitive dependencies
-- binary package downloads
-- raw Git dependency inference
-- package publishing workflow
-- C support
-- Zig/Make/Ninja integrations
-
----
-
-## Design Principle
-
-`mpp` should be boring, predictable, and explicit.
-
-It should not guess too much. If a library needs special link flags or build options, that knowledge belongs in `github.com/CPPLibLinker/vendor` as a recipe.
-
-The core tool should focus on:
-
-1. Resolving recipes.
-2. Vendoring dependency source/artifacts.
-3. Generating CMake integration.
-4. Running common build commands.
+- more tested OS/compiler profiles
+- binary artifacts/cache
+- richer transitive dependency handling
+- more build-system integrations
